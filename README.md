@@ -39,18 +39,23 @@ Click the menu bar icon to open the settings window; right-click it for quick to
 
 ## Installation
 
-1. Download **`Resizer.zip`** from the [Releases page](../../releases/latest).
+1. Download **`Resizer.zip`** from the [latest release](../../releases/latest).
 2. Unzip it and drag **Resizer.app** into your **Applications** folder.
-3. The first time, macOS will block the app because it isn't signed with a paid Apple Developer certificate.
-   To allow it, open Terminal and run:
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Resizer.app
-   ```
-   Or try to open the app, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
-4. Open Resizer and enable it under **System Settings → Privacy & Security → Accessibility**.
-   This permission is what lets it move and resize other apps' windows.
+3. **Allow it to open.** Resizer isn't notarized by Apple (that needs a paid developer account), so the first time macOS says it can't verify the app. Either:
+   - open Terminal and run:
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/Resizer.app
+     ```
+   - or double-click the app, close the warning, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+4. **Give it the Accessibility permission.** Open Resizer; macOS asks for it. Turn Resizer on under **System Settings → Privacy & Security → Accessibility**. This is what lets it move and resize other apps' windows.
 
-The icon shows up in the menu bar at the top of the screen.
+The icon shows up in the menu bar at the top of the screen: click it for settings, right-click for quick toggles and Quit.
+
+### Updating
+
+Quit Resizer, replace the app in **Applications** with the new one and do step 3 again.
+
+Released builds aren't signed with an Apple Developer ID, so macOS treats each new version as a different app and the Accessibility permission doesn't carry over: remove the old Resizer entry from the Accessibility list with **–** and turn the new one on. The settings window's **Reset Permission** button does the same.
 
 ## Building from source
 
@@ -59,25 +64,44 @@ Requires Xcode (or the Command Line Tools).
 ```bash
 git clone https://github.com/dudssecco/Resizer.git
 cd Resizer
-./tools/make_signing_cert.sh   # once
 ./build.sh --install
 ```
-
-`make_signing_cert.sh` creates a local self-signed code-signing certificate in your login keychain. Builds signed with it keep the same signature, so macOS remembers the Accessibility permission between builds. Without it, builds are ad-hoc signed and the permission has to be granted again after every build.
 
 | Command | What it does |
 |---|---|
 | `./build.sh` | Builds `build/Resizer.app` |
 | `./build.sh --install` | Builds and installs to `/Applications` |
-| `./build.sh --release` | Builds `dist/Resizer.zip` for publishing |
-| `./tools/make_signing_cert.sh` | Creates the local signing certificate (run once) |
+| `./build.sh --release` | Builds `dist/Resizer.zip` for publishing (always ad-hoc signed) |
+| `./tools/make_signing_cert.sh` | Creates your own local signing certificate (optional, run once) |
 | `./tools/make_icns.sh` | Regenerates the icon from `tools/make_icon.swift` |
+
+### Optional: your own signing certificate
+
+By default builds are *ad-hoc* signed: every build gets a new signature, and macOS forgets the Accessibility permission each time you rebuild. If you build often, create your own certificate once so every build on your Mac has the same signature and the permission sticks:
+
+1. Create the certificate. It's self-signed, lives only in your login keychain and is named **Resizer Local Signing**:
+   ```bash
+   ./tools/make_signing_cert.sh
+   ```
+2. Build and install. `build.sh` finds the certificate and signs with it (if macOS asks for keychain access, choose **Always Allow**):
+   ```bash
+   ./build.sh --install
+   ```
+3. Grant the permission one last time: in **System Settings → Privacy & Security → Accessibility**, remove the old Resizer entry with **–**, then turn the new one on. From then on, rebuilds keep it.
+
+Notes:
+- The certificate is only for your own builds. `./build.sh --release` ignores it, so it never ends up in a published zip.
+- Keep it if you'll keep building: if you delete or lose it, your next build has a new signature and you grant the permission again once.
+- To remove it, delete **Resizer Local Signing** in Keychain Access, or run:
+  ```bash
+  security delete-identity -c "Resizer Local Signing"
+  ```
 
 ## Limitations
 
 - Some apps enforce their own minimum or maximum window size; Resizer tells you when a window didn't reach the requested size.
 - Full-screen windows can't be resized.
-- If the Accessibility permission stops working after an update (the settings window shows a warning), remove Resizer from the Accessibility list with **–** and add it again, or click **Reset Permission**.
+- If the Accessibility permission stops working after an update or a rebuild (the settings window shows a warning), remove Resizer from the Accessibility list with **–** and add it again, or click **Reset Permission**.
 - The Stream Zone is always centered on its screen.
 
 ## License

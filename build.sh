@@ -28,8 +28,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>io.github.dudssecco.Resizer</string>
   <key>CFBundleExecutable</key><string>Resizer</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSUIElement</key><true/>
@@ -44,8 +44,11 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Sign with the local certificate from tools/make_signing_cert.sh when it exists:
 # a stable signature lets macOS keep the Accessibility permission across builds.
 # Otherwise ad-hoc (still required for the permission to work at all).
+# Release builds are always ad-hoc, so a personal certificate never ships in the zip.
 IDENTITY="Resizer Local Signing"
-if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
+if [ "${1:-}" = "--release" ]; then
+  codesign --force --deep --sign - "$APP"
+elif security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
   codesign --force --deep --sign "$IDENTITY" "$APP"
 else
   codesign --force --deep --sign - "$APP"
