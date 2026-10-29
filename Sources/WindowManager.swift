@@ -30,6 +30,17 @@ enum WindowManager {
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
 
+    /// Clears a stale entry (left by an older build with another signature),
+    /// then asks again so System Settings gets an entry for this build.
+    static func resetPermission() {
+        let tcc = Process()
+        tcc.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        tcc.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "io.github.dudssecco.Resizer"]
+        try? tcc.run()
+        tcc.waitUntilExit()
+        requestPermission()
+    }
+
     static func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
@@ -78,7 +89,52 @@ enum WindowManager {
         return attr(axApp, kAXFocusedWindowAttribute)
     }
 
+    /// Standard window under a point (AX coordinates). Goes through the window
+    /// server's list so our own click-through overlay never gets in the way.
+    static func window(at point: CGPoint) -> AXUIElement? {
+        let myPid = ProcessInfo.processInfo.processIdentifier
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for w in info {
+            guard (w[kCGWindowLayer as String] as? Int) == 0,
+                  let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid != myPid,
+                  let dict = w[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dict as CFDictionary),
+                  bounds.contains(point) else { continue }
+            // Topmost window under the point: find its AX element by frame.
+            let axApp = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(axApp, 0.3)
+            let windows: [AXUIElement] = attr(axApp, kAXWindowsAttribute) ?? []
+            return windows.first { el in
+                guard let p = position(of: el), let s = size(of: el) else { return false }
+                return abs(p.x - bounds.minX) < 2 && abs(p.y - bounds.minY) < 2
+                    && abs(s.width - bounds.width) < 2 && abs(s.height - bounds.height) < 2
+            }
+        }
+        return nil
+    }
+
     // MARK: Resizing
+
+    /// Moves and resizes a window to `target` (AX coordinates).
+    static func place(_ w: AXUIElement, in target: CGRect) -> ResizeResult {
+        if let fs: Bool = attr(w, "AXFullScreen"), fs {
+            return .failed("is in full screen")
+        }
+        // Size → position → size: some apps clamp the size to the room left at the old position.
+        setSize(w, target.size)
+        let err = setPosition(w, target.origin)
+        if err != .success {
+            return .failed("the app refused (error \(err.rawValue))")
+        }
+        setSize(w, target.size)
+
+        if let final = size(of: w),
+           abs(final.width - target.width) > 1 || abs(final.height - target.height) > 1 {
+            return .limited(final)
+        }
+        return .ok
+    }
 
     static func resize(_ w: AXUIElement, to target: CGSize, center: Bool) -> ResizeResult {
         if let fs: Bool = attr(w, "AXFullScreen"), fs {
@@ -148,15 +204,24 @@ enum WindowManager {
         return AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v)
     }
 
+    // MARK: Coordinates
+
+    /// Cocoa (origin bottom-left) → AX (origin top-left of the primary screen).
+    static func toAX(_ r: CGRect) -> CGRect {
+        CGRect(x: r.minX, y: primaryHeight - r.maxY, width: r.width, height: r.height)
+    }
+
+    static func toAX(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x, y: primaryHeight - p.y)
+    }
+
+    private static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
+
     /// Usable area (minus menu bar / Dock) of the screen holding the window,
     /// in AX coordinates (origin at the top-left of the primary screen).
     private static func visibleScreenRect(containing rect: CGRect) -> CGRect {
         let screens = NSScreen.screens
         guard let primary = screens.first else { return .zero }
-        let primaryH = primary.frame.height
-        func toAX(_ r: CGRect) -> CGRect {
-            CGRect(x: r.minX, y: primaryH - r.maxY, width: r.width, height: r.height)
-        }
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let screen = screens.first { toAX($0.frame).contains(center) } ?? NSScreen.main ?? primary
         return toAX(screen.visibleFrame)

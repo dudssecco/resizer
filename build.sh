@@ -41,8 +41,17 @@ PLIST
 [ -f Resources/AppIcon.icns ] || ./tools/make_icns.sh
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-# Ad-hoc signature (required for the Accessibility permission to work)
-codesign --force --deep --sign - "$APP"
+# Sign with the local certificate from tools/make_signing_cert.sh when it exists:
+# a stable signature lets macOS keep the Accessibility permission across builds.
+# Otherwise ad-hoc (still required for the permission to work at all).
+IDENTITY="Resizer Local Signing"
+if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
+  codesign --force --deep --sign "$IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+  echo "ℹ️  Ad-hoc signed: macOS will ask for Accessibility again after every build."
+  echo "   Run ./tools/make_signing_cert.sh once to fix that."
+fi
 
 echo "✅ Built: $(pwd)/$APP"
 

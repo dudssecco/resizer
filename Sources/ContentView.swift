@@ -2,58 +2,202 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: Model
+    @ObservedObject var zone: StreamZone
+
+    @AppStorage("settingsTab") private var tab = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Resizer").font(.headline)
-                Spacer()
-                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless)
-                    .help("Refresh window list")
+        VStack(alignment: .leading, spacing: 14) {
+            if !model.trusted { permissionBox }
+            TabView(selection: $tab) {
+                zoneTab.tabItem { Text("Stream Zone") }.tag(0)
+                resizeTab.tabItem { Text("Resize Windows") }.tag(1)
+                generalTab.tabItem { Text("General") }.tag(2)
             }
-
-            if !model.trusted {
-                permissionBox
-            } else {
-                sizeSection
-                Divider()
-                windowList
-                applyBar
-            }
-
-            Divider()
-            footer
         }
-        .padding(Self.padding)
-        .frame(width: Self.panelWidth)
+        .padding(20)
+        .frame(width: 520, height: model.trusted ? 600 : 700)
         .onAppear { model.refresh() }
     }
 
-    // MARK: Sections
+    // MARK: Tabs
+
+    private var zoneTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            group("Frame") {
+                Toggle("Show a frame around the zone", isOn: $zone.visible)
+                row("Color") { colorSwatches }
+                Toggle("Dim everything outside the zone", isOn: $zone.dimOutside)
+            }
+
+            group("Zone") {
+                row("Screen") {
+                    Picker("Screen", selection: zoneScreen) {
+                        Text("Widest screen").tag(StreamZone.autoScreen)
+                        Divider()
+                        ForEach(zone.screens, id: \.id) { s in Text(s.name).tag(s.id) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                row("Size") {
+                    Picker("Size", selection: zoneSize) {
+                        ForEach(zone.sizeOptions, id: \.self) { s in Text(zone.label(for: s)).tag(s) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                row("On stream") {
+                    Text(verbatim: "\(Int(zone.pixelSize.width)) × \(Int(zone.pixelSize.height)) px")
+                        .monospacedDigit()
+                }
+                let c = zone.crop
+                row("OBS crop") {
+                    Text(verbatim: "Left \(c.left) · Right \(c.right) · Top \(c.top) · Bottom \(c.bottom)")
+                        .monospacedDigit().textSelection(.enabled)
+                }
+            }
+
+            group("Windows") {
+                Toggle("Snap windows dropped in the zone", isOn: $zone.snapOnDrop)
+                Text("Drop a window in the middle of the zone to fill it, or near its left or right edge to take that half.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                shortcut("⌃⌥⌘↑", "Focused window fills the zone")
+                shortcut("⌃⌥⌘←", "Focused window takes the left half")
+                shortcut("⌃⌥⌘→", "Focused window takes the right half")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+    }
+
+    private var resizeTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.trusted {
+                sizeSection
+                Toggle("Center on screen", isOn: $model.center)
+                Divider()
+                windowList
+                applyBar
+            } else {
+                Text("Needs the Accessibility permission (see above).")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            shortcut("⇧⌥R", "Applies the size above to the focused window")
+        }
+        .padding(16)
+    }
+
+    private var generalTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            group("Startup") {
+                Toggle("Open at Login", isOn: Binding(
+                    get: { model.launchAtLogin },
+                    set: { model.setLaunchAtLogin($0) }
+                ))
+            }
+            group("Accessibility") {
+                HStack {
+                    Image(systemName: model.trusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(model.trusted ? Color.green : .orange)
+                    Text(model.trusted ? "Permission granted" : "Permission missing")
+                    Spacer()
+                    Button("Open Settings") { WindowManager.openAccessibilitySettings() }
+                }
+            }
+            group("Menu bar icon") {
+                Text("Click to open this window. Right-click for quick toggles and Quit.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            if !model.status.isEmpty {
+                Text(model.status).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            HStack {
+                Spacer()
+                Button("Quit Resizer") { NSApp.terminate(nil) }
+            }
+        }
+        .padding(16)
+    }
+
+    // MARK: Pieces
 
     private var permissionBox: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Accessibility permission required", systemImage: "lock.shield")
                 .font(.subheadline.bold())
-            Text("To resize other apps' windows, enable Resizer in System Settings → Privacy & Security → Accessibility.")
+            Text("Snapping and resizing need Resizer turned on in System Settings → Privacy & Security → Accessibility. If it's already on there but this message stays, that entry is from an older build: click Reset Permission and turn it on again.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Request Permission") { WindowManager.requestPermission() }
+                Button("Reset Permission") { WindowManager.resetPermission() }
                 Button("Open Settings") { WindowManager.openAccessibilitySettings() }
             }
         }
         .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var colorSwatches: some View {
+        HStack(spacing: 10) {
+            ForEach(StreamZone.FrameColor.allCases) { c in
+                let selected = zone.color == c
+                Button { zone.color = c } label: {
+                    Circle()
+                        .fill(Color(nsColor: c.nsColor))
+                        .frame(width: 20, height: 20)
+                        .overlay(Circle().stroke(Color.secondary.opacity(0.4), lineWidth: 0.5))
+                        .padding(3)
+                        .overlay(Circle().stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .help(c.name)
+            }
+        }
+    }
+
+    private func group<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.bold()).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) { content() }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func row<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        HStack {
+            Text(label).frame(width: 80, alignment: .leading)
+            content()
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func shortcut(_ keys: String, _ what: String) -> some View {
+        HStack {
+            Text(keys).font(.callout.monospaced()).frame(width: 70, alignment: .leading)
+            Text(what).font(.callout).foregroundStyle(.secondary)
+        }
+    }
+
+    // A saved size or screen that doesn't apply here shows what's actually used.
+    private var zoneSize: Binding<Int> {
+        Binding(get: { zone.sizeOptions.contains(zone.size) ? zone.size : StreamZone.maxSize },
+                set: { zone.size = $0 })
+    }
+
+    private var zoneScreen: Binding<CGDirectDisplayID> {
+        Binding(get: { zone.screens.contains { $0.id == zone.screenID } ? zone.screenID : StreamZone.autoScreen },
+                set: { zone.screenID = $0 })
     }
 
     // 3-column grid shared by the fields, the Save button and the presets.
     private static let boxWidth: CGFloat = 104
     private static let boxHeight: CGFloat = 26
     private static let gap: CGFloat = 12
-    private static let padding: CGFloat = 14
-    private static let panelWidth = boxWidth * 3 + gap * 2 + padding * 2
 
     private var sizeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -132,6 +276,9 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Open Windows").font(.subheadline.bold())
+                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+                    .help("Refresh window list")
                 Spacer()
                 Button(allSelected ? "Deselect All" : "Select All") {
                     model.selection = allSelected ? [] : Set(model.windows.map(\.id))
@@ -197,25 +344,6 @@ struct ContentView: View {
             if !model.status.isEmpty {
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Global shortcut: ⇧⌥R applies the current size to the focused window.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Center on screen", isOn: $model.center)
-                .font(.caption).controlSize(.small)
-            HStack {
-                Toggle("Open at Login", isOn: Binding(
-                    get: { model.launchAtLogin },
-                    set: { model.setLaunchAtLogin($0) }
-                ))
-                .font(.caption).controlSize(.small)
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-                    .buttonStyle(.borderless).font(.caption)
             }
         }
     }

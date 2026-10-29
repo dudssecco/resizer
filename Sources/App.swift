@@ -1,24 +1,95 @@
 import SwiftUI
 import ServiceManagement
+import Carbon.HIToolbox
 
 @main
 struct ResizerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @ObservedObject private var model = Model.shared
 
-    var body: some Scene {
-        MenuBarExtra("Resizer", systemImage: "macwindow.on.rectangle") {
-            ContentView(model: model)
-        }
-        .menuBarExtraStyle(.window)
-    }
+    // The menu bar icon and the settings window are managed by AppDelegate.
+    var body: some Scene { Settings { EmptyView() } }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem?
+    private var settingsWindow: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        HotKey.handler = { Model.shared.applyToFocusedWindow() }
-        HotKey.register()
+        HotKey.register(kVK_ANSI_R, shiftKey | optionKey) { Model.shared.applyToFocusedWindow() }
+        let zoneKeys = controlKey | optionKey | cmdKey
+        HotKey.register(kVK_UpArrow, zoneKeys) { StreamZone.shared.sendFocused(.full) }
+        HotKey.register(kVK_LeftArrow, zoneKeys) { StreamZone.shared.sendFocused(.left) }
+        HotKey.register(kVK_RightArrow, zoneKeys) { StreamZone.shared.sendFocused(.right) }
+        StreamZone.shared.start()
+        setUpStatusItem()
         if !WindowManager.isTrusted { WindowManager.requestPermission() }
+    }
+
+    // MARK: Menu bar icon: left click opens settings, right click shows the menu
+
+    private func setUpStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Resizer")
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem = item
+    }
+
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showMenu()
+        } else {
+            showSettings()
+        }
+    }
+
+    private func showMenu() {
+        let zone = StreamZone.shared, model = Model.shared
+        let menu = NSMenu()
+        menu.addItem(item("Open Resizer…", #selector(showSettings)))
+        menu.addItem(.separator())
+        menu.addItem(item("Show Zone Frame", #selector(toggleFrame), on: zone.visible))
+        menu.addItem(item("Snap Windows to Zone", #selector(toggleSnap), on: zone.snapOnDrop))
+        menu.addItem(.separator())
+        menu.addItem(item("Open at Login", #selector(toggleLogin), on: model.launchAtLogin))
+        menu.addItem(.separator())
+        menu.addItem(item("Quit Resizer", #selector(quit), key: "q"))
+
+        // Attach the menu only for this click so a left click keeps opening the window.
+        statusItem?.menu = menu
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
+    }
+
+    private func item(_ title: String, _ action: Selector, on: Bool? = nil, key: String = "") -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        i.target = self
+        if let on { i.state = on ? .on : .off }
+        return i
+    }
+
+    @objc private func toggleFrame() { StreamZone.shared.visible.toggle() }
+    @objc private func toggleSnap() { StreamZone.shared.snapOnDrop.toggle() }
+    @objc private func toggleLogin() { Model.shared.setLaunchAtLogin(!Model.shared.launchAtLogin) }
+    @objc private func quit() { NSApp.terminate(nil) }
+
+    // MARK: Settings window
+
+    @objc func showSettings() {
+        if settingsWindow == nil {
+            let host = NSHostingController(rootView: ContentView(model: .shared, zone: .shared))
+            let window = NSWindow(contentViewController: host)
+            window.title = "Resizer"
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        Model.shared.refresh()
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 }
 
