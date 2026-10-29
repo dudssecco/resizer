@@ -10,6 +10,14 @@
   Free and open source.
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Swift-5-F05138?logo=swift&logoColor=white" alt="Swift 5">
+  <img src="https://img.shields.io/badge/SwiftUI-0D96F6?logo=swift&logoColor=white" alt="SwiftUI">
+  <img src="https://img.shields.io/badge/AppKit-555555?logo=apple&logoColor=white" alt="AppKit">
+  <img src="https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Apple_Silicon_%2B_Intel-universal-6E6E73?logo=apple&logoColor=white" alt="Apple Silicon + Intel">
+</p>
+
 ---
 
 ## Features
