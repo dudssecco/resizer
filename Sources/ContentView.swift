@@ -120,9 +120,17 @@ struct ContentView: View {
             }
 
             section("Windows") {
-                row("Snap on drop", detail: "Middle fills the zone · near an edge takes that half") {
+                row("Snap on drop", detail: "Hold \(zone.snapKey.symbol) while dragging: middle fills the zone, near an edge takes that half") {
                     glassSwitch($zone.snapOnDrop)
                 }
+                separator
+                row("Hold to snap", detail: "Without it, windows just move") {
+                    Picker("Hold to snap", selection: $zone.snapKey) {
+                        ForEach(StreamZone.SnapKey.allCases) { k in Text("\(k.symbol) \(k.name)").tag(k) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                .disabled(!zone.snapOnDrop)
                 separator
                 HStack(spacing: 8) {
                     shortcutTile(["⌃", "⌥", "⌘", "↑"], "Fill the zone")
@@ -430,6 +438,8 @@ struct ContentView: View {
             }
 
             section("Keyboard shortcuts") {
+                shortcutRow("Hold while dragging a window to snap it into the zone", [zone.snapKey.symbol])
+                separator
                 shortcutRow("Fill the zone with the focused window", ["⌃", "⌥", "⌘", "↑"])
                 separator
                 shortcutRow("Left half of the zone", ["⌃", "⌥", "⌘", "←"])

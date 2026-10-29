@@ -36,6 +36,29 @@ final class StreamZone: ObservableObject {
         }
     }
 
+    /// Key held while dragging to snap: without it, windows just move.
+    enum SnapKey: String, CaseIterable, Identifiable {
+        case shift, option, control, command
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .shift: return "⇧"
+            case .option: return "⌥"
+            case .control: return "⌃"
+            case .command: return "⌘"
+            }
+        }
+        var name: String { rawValue.capitalized }
+        var flags: NSEvent.ModifierFlags {
+            switch self {
+            case .shift: return .shift
+            case .option: return .option
+            case .control: return .control
+            case .command: return .command
+            }
+        }
+    }
+
     @Published var visible: Bool { didSet { defaults.set(visible, forKey: "zoneVisible"); redraw() } }
     @Published var color: FrameColor { didSet { defaults.set(color.rawValue, forKey: "zoneColor"); redraw() } }
     /// Zone height in points, or `maxSize` for the largest 16:9 area that fits the screen.
@@ -44,6 +67,7 @@ final class StreamZone: ObservableObject {
     @Published var screenID: CGDirectDisplayID { didSet { defaults.set(Int(screenID), forKey: "zoneScreen"); recompute() } }
     @Published var dimOutside: Bool { didSet { defaults.set(dimOutside, forKey: "zoneDim"); redraw() } }
     @Published var snapOnDrop: Bool { didSet { defaults.set(snapOnDrop, forKey: "zoneSnap"); updateSnapper() } }
+    @Published var snapKey: SnapKey { didSet { defaults.set(snapKey.rawValue, forKey: "zoneSnapKey"); snapper.modifier = snapKey.flags } }
 
     /// Zone and its screen in Cocoa coordinates (origin bottom-left of the primary screen).
     @Published private(set) var rect: CGRect = .zero
@@ -64,6 +88,8 @@ final class StreamZone: ObservableObject {
         screenID = CGDirectDisplayID(defaults.integer(forKey: "zoneScreen"))
         dimOutside = defaults.bool(forKey: "zoneDim")
         snapOnDrop = defaults.object(forKey: "zoneSnap") as? Bool ?? true
+        snapKey = SnapKey(rawValue: defaults.string(forKey: "zoneSnapKey") ?? "") ?? .shift
+        snapper.modifier = snapKey.flags
 
         snapper.slotAt = { [weak self] p in self?.slot(at: p) }
         snapper.onPreview = { [weak self] slot in
@@ -98,11 +124,15 @@ final class StreamZone: ObservableObject {
     }
 
     /// Largest 16:9 area that fits the screen, in points.
+    /// Room kept on every side so the frame, drawn just outside the zone, stays on screen.
+    static let frameMargin: CGFloat = 8
+
+    /// Largest 16:9 area that fits the screen with the frame around it, in points.
+    /// The width is a multiple of 16 so the height is a whole number (exactly 16:9).
     var maxFit: CGSize {
-        let w = screenFrame.width, h = screenFrame.height
-        return w * 9 / 16 <= h
-            ? CGSize(width: w.rounded(.down), height: (w * 9 / 16).rounded(.down))
-            : CGSize(width: (h * 16 / 9).rounded(.down), height: h.rounded(.down))
+        let w = screenFrame.width - Self.frameMargin * 2, h = screenFrame.height - Self.frameMargin * 2
+        let width = (min(w, h * 16 / 9) / 16).rounded(.down) * 16
+        return CGSize(width: width, height: width * 9 / 16)
     }
 
     /// Size choices for this screen: the common heights that fit, then the max.
@@ -212,7 +242,8 @@ final class ZoneOverlay {
         w.backgroundColor = .clear
         w.hasShadow = false
         w.ignoresMouseEvents = true
-        w.level = .floating
+        // Above the menu bar so the top edge of the frame stays visible; open menus still cover it.
+        w.level = .statusBar
         w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         w.sharingType = .none // keep it out of screen captures where macOS honors this
         w.isReleasedWhenClosed = false
@@ -274,8 +305,10 @@ private final class ZoneOverlayView: NSView {
 
 // MARK: - Drag & drop snapping
 
-/// Watches window drags system-wide and reports when one is dropped in the zone.
+/// Watches window drags system-wide and reports when one is dropped in the zone
+/// while `modifier` is held (so plain drags just move the window).
 final class DragSnapper {
+    var modifier: NSEvent.ModifierFlags = .shift
     var slotAt: ((CGPoint) -> StreamZone.Slot?)?
     var onPreview: ((StreamZone.Slot?) -> Void)?
     var onDrop: ((AXUIElement, StreamZone.Slot) -> Void)?
@@ -293,6 +326,8 @@ final class DragSnapper {
             NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in self?.mouseDown() },
             NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in self?.mouseDragged() },
             NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in self?.mouseUp() },
+            // Pressing or releasing the key mid-drag shows or hides the preview right away.
+            NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] _ in self?.updateSlot() },
         ].compactMap { $0 }
         log.notice("snap monitors: \(self.monitors.count, privacy: .public)")
     }
@@ -325,7 +360,13 @@ final class DragSnapper {
             guard moving else { return }
             log.notice("window drag started")
         }
-        let new = slotAt?(NSEvent.mouseLocation)
+        updateSlot()
+    }
+
+    private func updateSlot() {
+        guard moving else { return }
+        let held = NSEvent.modifierFlags.contains(modifier)
+        let new = held ? slotAt?(NSEvent.mouseLocation) : nil
         if new != slot {
             slot = new
             onPreview?(new)
@@ -333,6 +374,7 @@ final class DragSnapper {
     }
 
     private func mouseUp() {
+        updateSlot()
         let drop = moving ? window.flatMap { w in slot.map { (w, $0) } } : nil
         if moving { log.notice("window dropped, slot: \(String(describing: self.slot), privacy: .public)") }
         reset()

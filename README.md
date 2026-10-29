@@ -21,7 +21,7 @@ Made for streaming from a big or ultrawide monitor: only a 16:9 area in the midd
 - **Zone frame:** a soft, rounded frame around the area that goes on stream, in red, blue, white, green or purple. It's drawn just outside the zone, so it never shows up on stream.
 - **Fits any screen:** pick the display and a size (1280×720, 1920×1080, 2560×1440… or *Max*, the largest 16:9 area that fits). On a 5120×1440 ultrawide, Max is the middle 2560×1440.
 - **OBS crop values:** the exact Left / Right / Top / Bottom pixels to type into *Display Capture → Crop*.
-- **Snap on drop:** drag a window into the zone and drop it: in the middle it fills the zone, near the left or right edge it takes that half.
+- **Snap on drop:** hold `⇧ Shift` while dragging a window into the zone and drop it: in the middle it fills the zone, near the left or right edge it takes that half. Without the key, windows just move as usual. The key can be changed to `⌥`, `⌃` or `⌘`.
 - **Shortcuts:** `⌃⌥⌘↑` fills the zone with the focused window, `⌃⌥⌘←` / `⌃⌥⌘→` give it the left / right half.
 - **Dim outside** (optional) darkens everything that isn't on stream.
 
