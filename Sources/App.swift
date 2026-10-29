@@ -80,9 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() {
         if settingsWindow == nil {
             let host = NSHostingController(rootView: ContentView(model: .shared, zone: .shared))
+            host.sizingOptions = .preferredContentSize // the window follows each tab's height
             let window = NSWindow(contentViewController: host)
             window.title = "Resizer"
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            // Glass look: content runs under a transparent title bar over a blurred background.
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
+            window.isOpaque = false
+            window.backgroundColor = .clear
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window

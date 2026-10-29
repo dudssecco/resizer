@@ -8,6 +8,7 @@ struct NumericField: NSViewRepresentable {
     let placeholder: String
     @Binding var text: String
     let max: Int
+    var fontSize: CGFloat = NSFont.systemFontSize
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -16,7 +17,7 @@ struct NumericField: NSViewRepresentable {
         field.drawsBackground = false
         field.focusRingType = .none
         field.alignment = .center
-        field.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        field.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .medium)
         field.delegate = context.coordinator
         field.stringValue = text
         return field

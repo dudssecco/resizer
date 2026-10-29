@@ -50,6 +50,7 @@ final class StreamZone: ObservableObject {
     @Published private(set) var screenFrame: CGRect = .zero
     @Published private(set) var scale: CGFloat = 1
     @Published private(set) var screens: [ScreenOption] = []
+    @Published private(set) var screenName = ""
 
     private let defaults = UserDefaults.standard
     private let overlay = ZoneOverlay()
@@ -119,6 +120,7 @@ final class StreamZone: ObservableObject {
         screens = NSScreen.screens.map { ScreenOption(id: Self.displayID(of: $0), name: $0.localizedName) }
         guard let screen else { return }
         screenFrame = screen.frame
+        screenName = screen.localizedName
         scale = screen.backingScaleFactor
         // A size saved on a bigger screen falls back to the max on this one.
         let zone = sizeOptions.contains(size) && size != Self.maxSize
